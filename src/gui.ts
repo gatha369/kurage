@@ -94,6 +94,24 @@ export function createGui(params: Params, status: GuiStatus, onChange: () => voi
   de.add(dp, 'overshoot', 0, 1, 0.01).name('揺れ返しの強さ');
   de.add(dp, 'hardness', 0, 1, 0.01).name('中心の硬さ');
 
+  const to = gui.addFolder('触れたときの反応（追加章B）');
+  const tp = params.touch;
+  to.add(tp, 'tapTime', 0.1, 0.8, 0.01).name('タップとみなす時間（秒）');
+  to.add(tp, 'tapMove', 2, 40, 1).name('タップとみなす移動量（px）');
+  to.add(tp, 'dentDepth', 0, 0.15, 0.001).name('へこみの大きさ');
+  to.add(tp, 'dentRadius', 0.08, 0.6, 0.01).name('へこみの広がる範囲');
+  to.add(tp, 'dentRecover', 0.3, 5, 0.01).name('へこみの戻る時間（秒）');
+  to.add(tp, 'panicRise', 0, 1, 0.01).name('慌て度の上がり方');
+  to.add(tp, 'panicMax', 0.2, 1.5, 0.01).name('慌て度の上限');
+  to.add(tp, 'calmTime', 3, 40, 0.5).name('落ち着くまでの時間（秒）');
+  to.add(tp, 'beatSpeedMax', 0, 2, 0.01).name('慌てた時の拍動の速さ');
+  to.add(tp, 'beatStrengthMax', 0, 1, 0.01).name('慌てた時の拍動の強さ');
+  to.add(tp, 'flee', 0, 3, 0.01).name('逃げる勢い');
+  to.add(tp, 'tentacleShrink', 0, 0.8, 0.01).name('触手の縮こまり');
+  to.add(tp, 'returnSpeed', 0.1, 3, 0.01).name('中心へ戻る速さ');
+  to.add(tp, 'appendageReaction', 0, 3, 0.01).name('触手・口腕の反応');
+  to.add(tp, 'waterPush', 0, 3, 0.01).name('微粒子の押し流され方');
+
   const actions = {
     export: async () => {
       const json = exportParams(params);
@@ -110,6 +128,24 @@ export function createGui(params: Params, status: GuiStatus, onChange: () => voi
     },
   };
   const exportBtn = gui.add(actions, 'export').name('今の設定を書き出す');
+
+  // スマートフォン：最初は隠しておき、隅の歯車ボタンで出し入れする
+  // （確認用：アドレスの末尾に ?touch=1 を付けると、パソコンでもスマートフォン向けの表示になる）
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch');
+  if (isTouch) {
+    document.body.classList.add('touch-ui');
+    gui.hide();
+    const gear = document.createElement('button');
+    gear.id = 'gear';
+    gear.setAttribute('aria-label', '調整パネルの表示切替');
+    gear.textContent = '⚙';
+    gear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      gui.show(gui._hidden);
+      gear.classList.toggle('on', !gui._hidden);
+    });
+    document.body.appendChild(gear);
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'h' || e.key === 'H') {

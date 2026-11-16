@@ -16,6 +16,21 @@
       }
       #loading.hidden { opacity: 0; }
       .lil-gui.lil-root { z-index: 10; }
+      /* スマートフォン：パネルは画面の下半分に収め、中身はスクロール */
+      body.touch-ui .lil-gui.lil-root {
+        top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+        width: 100% !important; --width: 100%; max-height: 50vh; overflow-y: auto;
+        -webkit-overflow-scrolling: touch; touch-action: pan-y;
+      }
+      /* 歯車ボタン：半透明で小さく、眺める邪魔にならないように */
+      #gear {
+        position: fixed; top: max(10px, env(safe-area-inset-top)); right: 10px; z-index: 11;
+        width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(10, 20, 35, 0.35); color: rgba(220, 230, 245, 0.55);
+        font-size: 18px; line-height: 1; padding: 0; cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #gear.on { color: rgba(240, 245, 255, 0.9); background: rgba(10, 20, 35, 0.6); }
     </style>
   </head>
   <body>

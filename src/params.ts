@@ -57,6 +57,24 @@ export interface Params {
   };
   deform: DeformParams; // 追加章A：傘の歪みと復元
   time: { scale: number }; // 時間の速さ（スローモーション観察用）
+  touch: {
+    // 追加章B：触れたときの反応
+    tapTime: number; // タップとみなす最長の押し時間（秒）
+    tapMove: number; // タップとみなす最大の指の移動量（ピクセル）
+    dentDepth: number; // へこみの大きさ（傘の半径に対する割合）
+    dentRadius: number; // へこみの広がる範囲
+    dentRecover: number; // へこみが戻る時間（秒）
+    panicRise: number; // 1回触ると慌て度がどれだけ上がるか
+    panicMax: number; // 慌て度の上限
+    calmTime: number; // 上限から落ち着くまでの秒数
+    beatSpeedMax: number; // 慌てたときの拍動の速さの最大（増える割合）
+    beatStrengthMax: number; // 慌てたときの拍動の強さの最大（増える割合）
+    flee: number; // 逃げる勢い
+    tentacleShrink: number; // 触手の縮こまり具合
+    returnSpeed: number; // 光の端から中心へ戻る速さ
+    appendageReaction: number; // 触手・口腕に触れたときの反応の強さ
+    waterPush: number; // 水だけの場所をタップしたときの微粒子の押し流され方
+  };
   quality: { mode: QualityMode };
 }
 
@@ -94,6 +112,23 @@ export const defaultParams: Params = {
   arms: { length: 1.3, width: 0.13, frill: 0.6, lag: 0.6 },
   deform: { ...defaultDeform },
   time: { scale: 1 },
+  touch: {
+    tapTime: 0.3,
+    tapMove: 10,
+    dentDepth: 0.05,
+    dentRadius: 0.25,
+    dentRecover: 1.6,
+    panicRise: 0.35,
+    panicMax: 1,
+    calmTime: 17,
+    beatSpeedMax: 1.2,
+    beatStrengthMax: 0.5,
+    flee: 1,
+    tentacleShrink: 0.45,
+    returnSpeed: 1,
+    appendageReaction: 1,
+    waterPush: 1,
+  },
   quality: { mode: 'auto' },
 };
 

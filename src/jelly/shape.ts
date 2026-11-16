@@ -46,7 +46,12 @@ export interface BellState {
   lag: number;
   strength: number;
   def?: DeformState; // 追加章A：ゆがみ（なければゆがみなし）
+  twitchT?: number; // 追加章B：ビクッと縮んでからの時間
+  twitchAmp?: number; // 追加章B：ビクッの強さ（0でなし）
 }
+
+export const TWITCH_TC = 0.12; // ビクッと縮む時間
+export const TWITCH_TR = 0.7; // ビクッから戻る時間
 
 export const PHI_M = 1.05;
 
@@ -85,7 +90,9 @@ export function pulseVariation(th: number, d: DeformState | undefined): [number,
 
 export function bellPos(u: number, side: number, th: number, s: BellState): [number, number, number] {
   const pv = pulseVariation(th, s.def);
-  const c = contraction(s.beatT - u * s.lag - u * pv[1], s.tc, s.tr) * s.strength * (1 + u * pv[0]);
+  const c1 = contraction(s.beatT - u * s.lag - u * pv[1], s.tc, s.tr);
+  const c2 = (s.twitchAmp ?? 0) * contraction((s.twitchT ?? 1e3) - u * s.lag, TWITCH_TC, TWITCH_TR);
+  const c = (c1 + c2 - c1 * c2) * s.strength * (1 + u * pv[0]);
   const phi = u * PHI_M;
   const sp = Math.sin(phi), cp = Math.cos(phi);
   const sM = Math.sin(PHI_M), cM = Math.cos(PHI_M);
@@ -122,6 +129,21 @@ export function bellPos(u: number, side: number, th: number, s: BellState): [num
     // ② てっぺんが平たくつぶれ、縁は後ろへめくれる
     qy -= d.flat * s.D * (0.1 * (1 - u * u) + 0.22 * u * u);
     qx += d.flat * s.R * 0.04 * u * u;
+    // 追加章B：触れた場所のへこみと、周りに広がる波紋（殻ごと押す。厚みは保つ）
+    let push = 0;
+    const px = u * Math.cos(th), pz = u * Math.sin(th);
+    for (let i = 0; i < d.dents.length / 4; i++) {
+      const amp = d.dents[i * 4 + 2];
+      const ra = d.ripples[i * 2 + 1];
+      if (amp === 0 && ra === 0) continue;
+      const u0 = d.dents[i * 4], t0 = d.dents[i * 4 + 1], rad = d.dents[i * 4 + 3];
+      const dist = Math.hypot(px - u0 * Math.cos(t0), pz - u0 * Math.sin(t0));
+      push += amp * Math.exp(-(dist * dist) / (rad * rad));
+      const front = dist - d.ripples[i * 2] * 0.9;
+      push += ra * Math.sin(front * 35) * Math.exp(-((front / 0.12) ** 2));
+    }
+    qx -= nx * push * s.R;
+    qy -= ny * push * s.R;
   }
   qy -= s.D * 0.45;
   return [qx * Math.cos(th), qy, qx * Math.sin(th)];

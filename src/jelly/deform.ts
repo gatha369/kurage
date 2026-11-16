@@ -4,6 +4,7 @@
 // とがった角やギザギザは原理的に出ない。
 
 export const DEFORM_MODES = 6;
+export const MAX_DENTS = 4; // 同時に残せるへこみの数
 
 export interface DeformParams {
   strength: number; // 全体のゆがみの強さ（0で追加章Aの前と同じ）
@@ -74,6 +75,10 @@ export interface DeformState {
   pa: [number, number, number]; // ① 縮む強さのばらつき
   pd: [number, number, number]; // ① 縮むタイミングのずれ（秒）
   pp: [number, number, number]; // ① 位相
+  // 追加章B：触れた場所のへこみ。[中心u, 中心θ, 深さ(内向き+), 広がり] × MAX_DENTS
+  dents: Float32Array;
+  // 波紋：[経過時間, 強さ] × MAX_DENTS
+  ripples: Float32Array;
 }
 
 export function emptyDeform(): DeformState {
@@ -85,7 +90,15 @@ export function emptyDeform(): DeformState {
     pa: [0, 0, 0],
     pd: [0, 0, 0],
     pp: [0, 0, 0],
+    dents: new Float32Array(MAX_DENTS * 4),
+    ripples: new Float32Array(MAX_DENTS * 2),
   };
+}
+
+export interface DentParams {
+  depth: number; // へこみの大きさ（傘の半径に対する割合）
+  radius: number; // 広がる範囲（傘の半径に対する割合）
+  recover: number; // 戻る時間（秒）
 }
 
 export interface DeformInputs {
@@ -103,6 +116,10 @@ export class BellDeformer {
   private seed: number;
   private time = 0;
   private idlePhase: number[];
+  private dentOsc = Array.from({ length: MAX_DENTS }, () => new Viscoelastic());
+  private dentAge = new Float32Array(MAX_DENTS).fill(1e3);
+  private dentAmp = new Float32Array(MAX_DENTS);
+  private dentNext = 0;
 
   constructor(seed = 77) {
     this.seed = seed;
@@ -146,7 +163,29 @@ export class BellDeformer {
     }
   }
 
-  update(dt: number, p: DeformParams, inp: DeformInputs): DeformState {
+  /**
+   * 追加章B：触れた場所をへこませる。
+   * u, theta：触れた場所、sign：外側から押したら+1、内側（真下）から押したら-1
+   * 縁ほど大きく、てっぺんほど小さくへこむ
+   */
+  poke(u: number, theta: number, sign: number, d: DentParams, hardness: number, attack: number, recover: number) {
+    const i = this.dentNext;
+    this.dentNext = (this.dentNext + 1) % MAX_DENTS;
+    const soft = 0.3 + 0.7 * Math.pow(Math.min(1, Math.max(0, u)), 1 + 2 * hardness);
+    const s = this.state;
+    s.dents[i * 4] = u;
+    s.dents[i * 4 + 1] = theta;
+    s.dents[i * 4 + 3] = d.radius;
+    const osc = this.dentOsc[i];
+    osc.x = 0;
+    osc.v = 0;
+    const { fast } = rates(attack, recover);
+    osc.kick(d.depth * soft * sign * fast * 1.5);
+    this.dentAge[i] = 0;
+    this.dentAmp[i] = d.depth * soft * sign * 0.3;
+  }
+
+  update(dt: number, p: DeformParams, inp: DeformInputs, dentP?: DentParams): DeformState {
     this.time += dt;
     const { fast, slow } = rates(p.attack, p.recover);
     const s = this.state;
@@ -185,6 +224,18 @@ export class BellDeformer {
       s.modes[i] = (this.osc[i].x + idle) * (p.strength > 0 ? 1 : 0);
     }
     s.flat = this.flatOsc.x * (p.strength > 0 ? 1 : 0);
+
+    // へこみと波紋（揺れ返しの設定は追加章Aと共通）
+    const dr = rates(p.attack, dentP?.recover ?? p.recover);
+    for (let i = 0; i < MAX_DENTS; i++) {
+      const o = this.dentOsc[i];
+      for (let k = 0; k < sub; k++) o.step(dt / sub, dr.fast, dr.slow, p.overshoot, 0);
+      s.dents[i * 4 + 2] = o.x;
+      this.dentAge[i] += dt;
+      const age = this.dentAge[i];
+      s.ripples[i * 2] = age;
+      s.ripples[i * 2 + 1] = this.dentAmp[i] * Math.exp(-age / 0.5) * (age < 3 ? 1 : 0);
+    }
     return s;
   }
 }

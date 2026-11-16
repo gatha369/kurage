@@ -23,16 +23,22 @@ uniform vec3 uPK;        // ① ばらつきの波の数
 uniform vec3 uPA;        // ① 縮む強さのばらつき
 uniform vec3 uPD;        // ① 縮むタイミングのずれ
 uniform vec3 uPP;        // ① 位相
+// 追加章B：触れたときの反応
+uniform float uTwitchT;  // ビクッと縮んでからの時間
+uniform float uTwitchAmp;
+uniform vec4 uDent[4];   // へこみ [中心u, 中心θ, 深さ, 広がり]
+uniform vec2 uRipple[4]; // 波紋 [経過時間, 強さ]
 
 const float PHI_M = 1.05;
 
-float contraction(float t) {
-  if (t <= 0.0 || t >= uTc + uTr) return 0.0;
-  if (t < uTc) { float s = t / uTc; return s * s * (3.0 - 2.0 * s); }
-  float s = (t - uTc) / uTr;
+float contractionT(float t, float tc, float tr) {
+  if (t <= 0.0 || t >= tc + tr) return 0.0;
+  if (t < tc) { float s = t / tc; return s * s * (3.0 - 2.0 * s); }
+  float s = (t - tc) / tr;
   float a = 1.0 - s;
   return a * a * a * (1.0 + 3.0 * s);
 }
+float contraction(float t) { return contractionT(t, uTc, uTr); }
 
 float radiusFactor(float th, float u) {
   float irr = 1.0 + uIrr * (0.5 * sin(th + uPhase.x) + 0.3 * sin(2.0 * th + uPhase.y) + 0.2 * sin(3.0 * th + uPhase.z));
@@ -61,7 +67,9 @@ vec2 pulseVariation(float th) {
 
 vec3 bellPos(float u, float side, float th) {
   vec2 pv = pulseVariation(th);
-  float c = contraction(uBeatT - u * uLag - u * pv.y) * uStrength * (1.0 + u * pv.x);
+  float c1 = contraction(uBeatT - u * uLag - u * pv.y);
+  float c2 = uTwitchAmp * contractionT(uTwitchT - u * uLag, 0.12, 0.7);
+  float c = (c1 + c2 - c1 * c2) * uStrength * (1.0 + u * pv.x);
   float phi = u * PHI_M;
   float sp = sin(phi), cp = cos(phi);
   float sM = sin(PHI_M), cM = cos(PHI_M);
@@ -92,6 +100,20 @@ vec3 bellPos(float u, float side, float th) {
   // ② てっぺんが平たくつぶれ、縁は後ろへめくれる
   q.y -= uFlat * uD * (0.1 * (1.0 - u * u) + 0.22 * u * u);
   q.x += uFlat * uR * 0.04 * u * u;
+  // 追加章B：触れた場所のへこみと、周りに広がる波紋（殻ごと押す。厚みは保つ）
+  float push = 0.0;
+  vec2 pp = vec2(u * cos(th), u * sin(th));
+  for (int i = 0; i < 4; i++) {
+    float amp = uDent[i].z;
+    float ra = uRipple[i].y;
+    vec2 c0 = uDent[i].x * vec2(cos(uDent[i].y), sin(uDent[i].y));
+    float dist = length(pp - c0);
+    float rad = max(uDent[i].w, 1e-3);
+    push += amp * exp(-(dist * dist) / (rad * rad));
+    float front = dist - uRipple[i].x * 0.9;
+    push += ra * sin(front * 35.0) * exp(-(front / 0.12) * (front / 0.12));
+  }
+  q -= nrm * push * uR;
   q.y -= uD * 0.45;
   return vec3(q.x * cos(th), q.y, q.x * sin(th));
 }
@@ -145,6 +167,10 @@ export function createBell() {
     uPA: { value: new THREE.Vector3() },
     uPD: { value: new THREE.Vector3() },
     uPP: { value: new THREE.Vector3() },
+    uTwitchT: { value: 1e3 },
+    uTwitchAmp: { value: 0 },
+    uDent: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
+    uRipple: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
     // 質感
     uBg: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },

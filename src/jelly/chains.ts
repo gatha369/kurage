@@ -171,6 +171,22 @@ export class ChainSet {
     }
   }
 
+  /**
+   * 追加章B：指で払う。chain の節 j を offset だけ押しのける（付け根側・先端側へなだらかに広がる）。
+   * その後は元の形へ戻ろうとする力で、ゆっくり元の動きに戻る
+   */
+  poke(chain: number, j: number, offset: THREE.Vector3, scale = 1) {
+    const P = this.pointsPerChain;
+    const base = chain * P * 3;
+    for (let k = 1; k < P; k++) {
+      const fall = Math.exp(-(((k - j) / (P * 0.35)) ** 2)) * Math.min(1, k / 2);
+      const i = base + k * 3;
+      const dx = offset.x * fall * scale, dy = offset.y * fall * scale, dz = offset.z * fall * scale;
+      this.pos[i] += dx; this.pos[i + 1] += dy; this.pos[i + 2] += dz;
+      this.prev[i] += dx; this.prev[i + 1] += dy; this.prev[i + 2] += dz;
+    }
+  }
+
   /** 長さなどを変えたとき、全部を置き直す */
   reset() {
     this.initialized = false;

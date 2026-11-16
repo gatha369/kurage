@@ -14,6 +14,10 @@ import { ChainSet, armSpecs, tentacleSpecs } from './jelly/chains';
 import { BellDeformer } from './jelly/deform';
 import { createArmMesh, createTentacleMesh, setFrontPass } from './jelly/appendages';
 import { createGui } from './gui';
+import { TapTracker } from './interact/tap';
+import { hitBell, hitChains } from './interact/hit';
+import { Panic } from './jelly/panic';
+import type { DeformParams } from './jelly/deform';
 
 const SPOT_HEIGHT = 12;
 const LEVEL_NAMES = ['高', '中', '低'];
@@ -79,6 +83,7 @@ const tentacleMesh = createTentacleMesh(tentacles);
 const armMesh = createArmMesh(arms);
 scene.add(tentacleMesh.mesh, armMesh.mesh);
 const tentacleRand = tentacles.specs.map((s) => s.rand);
+const tentacleBaseLen = tentacles.specs.map(() => 0.5);
 const deformer = new BellDeformer(JELLY_SEED % 1000);
 const bellState: BellState = {
   R: 1, D: 0.36, thick: 0.2, irr: 0.04, notch: 0.035, phase: ph,
@@ -93,6 +98,80 @@ const layered = new LayeredRenderPass(scene, camera, jelly, [beam.mesh], (mode) 
 });
 bell.uniforms.uBg.value = layered.bgTarget.texture;
 const post = createPost(renderer, layered);
+
+// ---- 追加章B：触れたときの反応 ----
+let screenProj = 800;
+const tapTracker = new TapTracker();
+const panic = new Panic();
+let twitchT = 1e3;
+let twitchAmp = 0;
+let pushNext = 0;
+const raycaster = new THREE.Raycaster();
+const tapOpt = () => ({ maxTime: params.touch.tapTime, maxMove: params.touch.tapMove });
+el.addEventListener('pointerdown', (e) => tapTracker.down(e.pointerId, e.clientX, e.clientY, performance.now() / 1000));
+el.addEventListener('pointermove', (e) => tapTracker.move(e.pointerId, e.clientX, e.clientY, tapOpt()));
+el.addEventListener('pointercancel', (e) => tapTracker.cancel(e.pointerId));
+el.addEventListener('pointerup', (e) => {
+  const tap = tapTracker.up(e.pointerId, e.clientX, e.clientY, performance.now() / 1000, tapOpt());
+  if (tap) onTap(tap.x, tap.y);
+});
+
+function onTap(x: number, y: number) {
+  const tp = params.touch;
+  const R = params.bell.size;
+  const rect = el.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const ray = raycaster.ray;
+  const hb = hitBell(ray, jelly.matrixWorld, bellState);
+  const ht = hitChains(ray, tentacles, tentacleCount, 0.04 * R, 22, screenProj);
+  const ha = hitChains(ray, arms, arms.specs.length, 0.08 * R, 28, screenProj);
+  // 一番手前にあるものに触れる
+  const cands = [
+    hb ? { kind: 'bell' as const, t: hb.t } : null,
+    ht ? { kind: 'tentacle' as const, t: ht.t } : null,
+    ha ? { kind: 'arm' as const, t: ha.t } : null,
+  ].filter((c): c is NonNullable<typeof c> => c !== null).sort((a, b) => a.t - b.t);
+  const first = cands[0]?.kind;
+
+  if (first === 'bell' && hb && hb.kind === 'bell') {
+    // 触れた場所がへこみ、ビクッと縮み、触れた場所から離れる向きへ逃げる
+    const d = params.deform;
+    deformer.poke(hb.u, hb.theta, hb.fromOutside ? 1 : -1,
+      { depth: tp.dentDepth, radius: tp.dentRadius, recover: tp.dentRecover }, d.hardness, d.attack, tp.dentRecover);
+    panic.touch(tp.panicRise, tp.panicMax);
+    twitchT = 0;
+    twitchAmp = Math.min(1, 0.55 + 0.45 * panic.level);
+    motion.flee(motion.pos.clone().sub(hb.point), 0.5 + 0.3 * Math.min(1, panic.level));
+  } else if ((first === 'tentacle' && ht) || (first === 'arm' && ha)) {
+    // 触手・口腕：払われたようにぴくっとなびく。周りも少しつられる。反応は傘より控えめ
+    const hit = first === 'tentacle' ? ht! : ha!;
+    const set = first === 'tentacle' ? tentacles : arms;
+    const k = tp.appendageReaction;
+    const push = ray.direction.clone().multiplyScalar(0.18 * R * k);
+    set.poke(hit.chain, hit.index, push);
+    const th0 = set.specs[hit.chain].theta;
+    const n = first === 'tentacle' ? tentacleCount : set.specs.length;
+    for (let c = 0; c < n; c++) {
+      if (c === hit.chain) continue;
+      let dth = Math.abs(set.specs[c].theta - th0) % (Math.PI * 2);
+      dth = Math.min(dth, Math.PI * 2 - dth);
+      if (dth < 0.25) set.poke(c, hit.index, push, 0.35 * (1 - dth / 0.25));
+    }
+    panic.touch(tp.panicRise * 0.4 * Math.min(1.5, k), tp.panicMax);
+    twitchT = 0;
+    twitchAmp = Math.min(1, 0.25 + 0.25 * panic.level);
+    motion.flee(motion.pos.clone().sub(hit.point), 0.25);
+  } else {
+    // 水だけの場所：クラゲは反応せず、周りの微粒子だけが押し流される
+    const dist = camera.position.distanceTo(motion.pos);
+    const pt = ray.at(dist, new THREE.Vector3());
+    const i = pushNext;
+    pushNext = (pushNext + 1) % 4;
+    particles.uniforms.uPush.value[i].set(pt.x, pt.y, pt.z, 0);
+    particles.uniforms.uPushDir.value[i].set(ray.direction.x, ray.direction.y, ray.direction.z, 0.6 * tp.waterPush);
+  }
+}
 
 // ---- 品質 ----
 const quality = new AdaptiveQuality(now());
@@ -122,6 +201,7 @@ function resize() {
   post.composer.setSize(w, h);
   bell.uniforms.uResolution.value.set(layered.bgTarget.width, layered.bgTarget.height);
   const proj = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  screenProj = proj / pr; // 当たり判定用（CSSピクセル）
   particles.uniforms.uPixelRatio.value = pr;
   particles.uniforms.uProj.value = proj;
   tentacleMesh.uniforms.uPixelRatio.value = pr;
@@ -194,7 +274,8 @@ function applyParams() {
   // 触手：長さと太さに個体差
   const tp = params.tentacles;
   tentacles.specs.forEach((s, i) => {
-    s.length = tp.length * (1 + tp.variation * (tentacleRand[i] - 0.5) * 1.2);
+    tentacleBaseLen[i] = tp.length * (1 + tp.variation * (tentacleRand[i] - 0.5) * 1.2);
+    s.length = tentacleBaseLen[i];
   });
   tentacleMesh.uniforms.uWidth.value = 0.006 * tp.thickness * b.size;
   tentacleMesh.uniforms.uVariation.value = tp.variation;
@@ -222,6 +303,7 @@ resize();
 // ---- 毎フレームの処理 ----
 let last = now();
 let simT = 0; // クラゲや水の動きの時間（時間の速さで遅くできる）
+const deformEff: DeformParams = { ...params.deform };
 const prevQuat = new THREE.Quaternion();
 const turnSmooth = new THREE.Vector2();
 let fpsAcc = 0;
@@ -252,17 +334,35 @@ function frame() {
   spotUniforms.uTime.value = simT;
   post.finish.uniforms.uTime.value = t;
 
-  // クラゲの拍動と泳ぎ
+  // 追加章B：慌て度（触られないとゆっくり下がる）
+  const tc = params.touch;
+  const P0 = panic.update(sdt, tc.panicMax, tc.calmTime);
+  // 見た目の慌て具合：1回触っただけでもはっきり反応するよう、低いところを持ち上げる
+  const P = P0 > 0 ? Math.pow(P0, 0.6) : 0;
+  twitchT += sdt;
+
+  // クラゲの拍動と泳ぎ（慌てているほど拍動が速く強い。切り替えは拍動の区切りで）
   const b = params.bell;
+  const fast = 1 + P * tc.beatSpeedMax;
   prevQuat.copy(motion.quat);
   motion.update(sdt, {
-    period: b.period, contractTime: b.contractTime, relaxTime: b.relaxTime,
+    period: b.period / fast,
+    contractTime: b.contractTime / (1 + 0.5 * P * tc.beatSpeedMax),
+    relaxTime: b.relaxTime / fast,
+    strength: b.strength * (1 + P * tc.beatStrengthMax),
     lag: WAVE_LAG, thrust: b.thrust * b.size, sink: b.sink,
+    panic: P, flee: tc.flee, returnSpeed: tc.returnSpeed,
   }, cone);
+  bell.uniforms.uTc.value = bellState.tc = motion.shape.tc;
+  bell.uniforms.uTr.value = bellState.tr = motion.shape.tr;
+  bell.uniforms.uStrength.value = bellState.strength = motion.shape.strength;
+  bell.uniforms.uTwitchT.value = bellState.twitchT = twitchT;
+  bell.uniforms.uTwitchAmp.value = bellState.twitchAmp = twitchAmp;
   jelly.position.copy(motion.pos);
   jelly.quaternion.copy(motion.quat);
   jelly.updateMatrixWorld();
   bell.uniforms.uBeatT.value = motion.beat.t;
+  const bu = bell.uniforms;
 
   // 触手と口腕（傘の動きから遅れてついてくる）
   bellState.beatT = motion.beat.t;
@@ -278,14 +378,21 @@ function frame() {
     axis.applyQuaternion(motion.quat.clone().invert());
     turnSmooth.lerp(new THREE.Vector2(-axis.z, axis.x), 1 - Math.exp(-sdt * 6));
   }
-  const def = deformer.update(sdt, params.deform, {
+  // 慌てているほど、ゆがみも大きくなる
+  Object.assign(deformEff, params.deform);
+  deformEff.strength = params.deform.strength * (1 + P);
+  const def = deformer.update(sdt, deformEff, {
     beatStarted: motion.beatStarted,
     speed: motion.vel / Math.max(0.3, b.size),
     turnX: turnSmooth.x,
     turnZ: turnSmooth.y,
-  });
+  }, { depth: tc.dentDepth, radius: tc.dentRadius, recover: tc.dentRecover });
+  for (let i = 0; i < 4; i++) {
+    bu.uDent.value[i].set(def.dents[i * 4], def.dents[i * 4 + 1], def.dents[i * 4 + 2], def.dents[i * 4 + 3]);
+    bu.uRipple.value[i].set(def.ripples[i * 2], def.ripples[i * 2 + 1]);
+    particles.uniforms.uPush.value[i].w += sdt;
+  }
   bellState.def = def;
-  const bu = bell.uniforms;
   for (let k = 0; k < 6; k++) bu.uDef.value[k].set(def.modes[k * 4], def.modes[k * 4 + 1], def.modes[k * 4 + 2], def.modes[k * 4 + 3]);
   bu.uFlat.value = def.flat;
   bu.uDefHard.value = def.hard;
@@ -294,6 +401,9 @@ function frame() {
   bu.uPD.value.set(...def.pd);
   bu.uPP.value.set(...def.pp);
 
+  // 慌てているほど、触手がきゅっと縮こまる
+  const shrink = 1 - tc.tentacleShrink * Math.min(1, P);
+  for (let i = 0; i < tentacles.specs.length; i++) tentacles.specs[i].length = tentacleBaseLen[i] * shrink;
   const tp = params.tentacles;
   tentacles.update(sdt, jelly.matrixWorld, jelly.quaternion, bellState, {
     stiffness: THREE.MathUtils.lerp(14, 3, tp.suppleness),
@@ -346,5 +456,5 @@ start();
 
 // 開発中だけ：動作確認用に値へアクセスできるようにする
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality, motion, jelly, tentacles, arms, tentacleMesh, armMesh, bellState, renderer };
+  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality, motion, jelly, tentacles, arms, tentacleMesh, armMesh, bellState, renderer, panic, onTap };
 }

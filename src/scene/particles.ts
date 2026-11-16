@@ -36,6 +36,9 @@ export function createParticles(seed = 7) {
     uAmbient: { value: 0.015 },
     uSplit: { value: 0 }, // この距離より手前／奥だけを描く
     uSplitMode: { value: 0 }, // 0=すべて, 1=奥だけ, 2=手前だけ
+    // 追加章B：水だけの場所をタップしたときの押し流し [位置xyz, 経過時間] / [押す向きxyz, 強さ]
+    uPush: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 1e3)) },
+    uPushDir: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -54,6 +57,8 @@ export function createParticles(seed = 7) {
       uniform float uAmbient;
       uniform float uSplit;
       uniform float uSplitMode;
+      uniform vec4 uPush[4];
+      uniform vec4 uPushDir[4];
       varying float vAlpha;
       varying float vBlur;
 
@@ -66,6 +71,17 @@ export function createParticles(seed = 7) {
         p.x += sin(uTime * (0.15 + 0.2 * aRand.y) + aRand.y * 6.283) * 0.12;
         p.z += cos(uTime * (0.12 + 0.2 * aRand.w) + aRand.w * 6.283) * 0.12;
         p += uCenter;
+        // 指で水を押したように、周りの粒が押し流される（すっと流れて、ゆっくり元の流れに戻る）
+        for (int i = 0; i < 4; i++) {
+          float s = uPushDir[i].w;
+          float age = uPush[i].w;
+          if (s <= 0.0 || age > 12.0) continue;
+          vec3 d = p - uPush[i].xyz;
+          float fall = exp(-dot(d, d) / 0.8);
+          float e = (1.0 - exp(-age * 3.5)) * exp(-age / 4.0);
+          vec3 away = d / max(length(d), 1e-3);
+          p += (uPushDir[i].xyz * 0.6 + away * 0.4) * s * fall * e * 0.5;
+        }
 
         vec4 mv = viewMatrix * vec4(p, 1.0);
         float dist = max(-mv.z, 0.05);
