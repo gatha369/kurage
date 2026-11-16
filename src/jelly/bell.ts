@@ -15,6 +15,14 @@ uniform float uTc;       // 縮む時間
 uniform float uTr;       // 開く時間
 uniform float uLag;      // 中心→縁へ伝わる遅れ
 uniform float uStrength; // 縮む強さ
+// 追加章A：ゆがみ
+uniform vec4 uDef[6];    // k=1..6 の [半径cos, 半径sin, 高さcos, 高さsin]
+uniform float uFlat;     // ② つぶれ
+uniform float uDefHard;  // 縁と中心の差
+uniform vec3 uPK;        // ① ばらつきの波の数
+uniform vec3 uPA;        // ① 縮む強さのばらつき
+uniform vec3 uPD;        // ① 縮むタイミングのずれ
+uniform vec3 uPP;        // ① 位相
 
 const float PHI_M = 1.05;
 
@@ -41,8 +49,19 @@ float thicknessAt(float u) {
 }
 
 // u：中心(0)〜縁(1)、side：外側の面(0)〜内側の面(1)、th：角度
+vec2 pulseVariation(float th) {
+  float a = 0.0, dl = 0.0;
+  for (int j = 0; j < 3; j++) {
+    float w = cos(uPK[j] * th + uPP[j]);
+    a += uPA[j] * w;
+    dl += uPD[j] * (w * 0.5 + 0.5);
+  }
+  return vec2(max(-0.9, a), dl);
+}
+
 vec3 bellPos(float u, float side, float th) {
-  float c = contraction(uBeatT - u * uLag) * uStrength;
+  vec2 pv = pulseVariation(th);
+  float c = contraction(uBeatT - u * uLag - u * pv.y) * uStrength * (1.0 + u * pv.x);
   float phi = u * PHI_M;
   float sp = sin(phi), cp = cos(phi);
   float sM = sin(PHI_M), cM = cos(PHI_M);
@@ -59,6 +78,20 @@ vec3 bellPos(float u, float side, float th) {
   // 拍動：縁ほど大きく内側へすぼまり、傘全体が少し縦長になる
   q.x *= 1.0 - 0.3 * c * pow(u, 1.5);
   q.y += -c * uD * 0.65 * pow(u, 2.0) + c * uD * 0.12 * (1.0 - u);
+  // 追加章A：ゆがみ（縁ほど大きく、中心ほど小さい）
+  float w = pow(u, uDefHard);
+  float dr = 0.0, dy = 0.0;
+  for (int k = 0; k < 6; k++) {
+    float fk = float(k + 1);
+    float ck = cos(fk * th), sk = sin(fk * th);
+    dr += uDef[k].x * ck + uDef[k].y * sk;
+    dy += uDef[k].z * ck + uDef[k].w * sk;
+  }
+  q.x += w * dr * uR;
+  q.y += w * dy * uR;
+  // ② てっぺんが平たくつぶれ、縁は後ろへめくれる
+  q.y -= uFlat * uD * (0.1 * (1.0 - u * u) + 0.22 * u * u);
+  q.x += uFlat * uR * 0.04 * u * u;
   q.y -= uD * 0.45;
   return vec3(q.x * cos(th), q.y, q.x * sin(th));
 }
@@ -105,6 +138,13 @@ export function createBell() {
     uTr: { value: 1.2 },
     uLag: { value: 0.12 },
     uStrength: { value: 1 },
+    uDef: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) },
+    uFlat: { value: 0 },
+    uDefHard: { value: 2.5 },
+    uPK: { value: new THREE.Vector3(2, 3, 4) },
+    uPA: { value: new THREE.Vector3() },
+    uPD: { value: new THREE.Vector3() },
+    uPP: { value: new THREE.Vector3() },
     // 質感
     uBg: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
@@ -115,7 +155,7 @@ export function createBell() {
     uRefract: { value: 1 },
     uBlue: { value: 0.4 },
     uMilk: { value: 0.35 },
-    uGonadColor: { value: new THREE.Color('#f2b6c8') },
+    uGonadColor: { value: new THREE.Color('#e0d7d9') },
     uGonad: { value: 0.8 },
     uCanal: { value: 0.5 },
     uCaustics: { value: 0.35 },

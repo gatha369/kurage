@@ -1,5 +1,6 @@
 // 調整パネルで変えられる値と、その初期値。
 // 「今の設定を書き出す」で出たJSONを、ここの初期値に貼り付けて本採用にする。
+import { defaultDeform, type DeformParams } from './jelly/deform';
 
 export type QualityMode = 'auto' | 'high' | 'mid' | 'low';
 
@@ -54,6 +55,8 @@ export interface Params {
     frill: number; // フリルの強さ
     lag: number; // 遅れ具合
   };
+  deform: DeformParams; // 追加章A：傘の歪みと復元
+  time: { scale: number }; // 時間の速さ（スローモーション観察用）
   quality: { mode: QualityMode };
 }
 
@@ -83,12 +86,14 @@ export const defaultParams: Params = {
     refraction: 1,
     blue: 0.4,
     milk: 0.35,
-    gonadColor: '#f2b6c8',
+    gonadColor: '#e0d7d9',
     gonad: 0.8,
     canal: 0.4,
   },
   tentacles: { count: 240, length: 0.5, thickness: 1, variation: 0.5, suppleness: 0.5, drag: 1 },
   arms: { length: 1.3, width: 0.13, frill: 0.6, lag: 0.6 },
+  deform: { ...defaultDeform },
+  time: { scale: 1 },
   quality: { mode: 'auto' },
 };
 

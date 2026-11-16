@@ -36,6 +36,8 @@ export class JellyMotion {
   pos = new THREE.Vector3();
   quat = new THREE.Quaternion();
   vel = 0;
+  /** このフレームで新しい拍動が始まったか */
+  beatStarted = false;
   beat: BeatClock;
   target = new THREE.Vector3();
   private nextTargetAt = 0;
@@ -76,7 +78,7 @@ export class JellyMotion {
     dt = Math.min(dt, 0.1);
     this.time += dt;
     const before = this.bodyContraction(p);
-    this.beat.update(dt, p.period, p.contractTime, p.relaxTime, p.lag);
+    this.beatStarted = this.beat.update(dt, p.period, p.contractTime, p.relaxTime, p.lag);
     const c = this.bodyContraction(p);
     const dc = Math.max(0, c - before);
 

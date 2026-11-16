@@ -11,6 +11,7 @@ import { createBell } from './jelly/bell';
 import { JellyMotion, type Cone } from './jelly/motion';
 import { JELLY_SEED, shapePhases, type BellState } from './jelly/shape';
 import { ChainSet, armSpecs, tentacleSpecs } from './jelly/chains';
+import { BellDeformer } from './jelly/deform';
 import { createArmMesh, createTentacleMesh, setFrontPass } from './jelly/appendages';
 import { createGui } from './gui';
 
@@ -78,6 +79,7 @@ const tentacleMesh = createTentacleMesh(tentacles);
 const armMesh = createArmMesh(arms);
 scene.add(tentacleMesh.mesh, armMesh.mesh);
 const tentacleRand = tentacles.specs.map((s) => s.rand);
+const deformer = new BellDeformer(JELLY_SEED % 1000);
 const bellState: BellState = {
   R: 1, D: 0.36, thick: 0.2, irr: 0.04, notch: 0.035, phase: ph,
   beatT: 0, tc: 0.4, tr: 1.2, lag: WAVE_LAG, strength: 1,
@@ -219,6 +221,9 @@ resize();
 
 // ---- 毎フレームの処理 ----
 let last = now();
+let simT = 0; // クラゲや水の動きの時間（時間の速さで遅くできる）
+const prevQuat = new THREE.Quaternion();
+const turnSmooth = new THREE.Vector2();
 let fpsAcc = 0;
 let fpsFrames = 0;
 const prevTarget = new THREE.Vector3();
@@ -238,14 +243,19 @@ function frame() {
   }
   if (params.quality.mode === 'auto' && quality.update(t, dt)) applyQuality();
 
+  // 時間の速さ（スローモーション）。カメラ操作とフィルムグレインは普通の速さのまま
+  const sdt = dt * params.time.scale;
+  simT += sdt;
+
   // 光のゆらぎ
-  spotUniforms.uLight.value = lightFlicker(t, params.spot.flicker);
-  spotUniforms.uTime.value = t;
+  spotUniforms.uLight.value = lightFlicker(simT, params.spot.flicker);
+  spotUniforms.uTime.value = simT;
   post.finish.uniforms.uTime.value = t;
 
   // クラゲの拍動と泳ぎ
   const b = params.bell;
-  motion.update(dt, {
+  prevQuat.copy(motion.quat);
+  motion.update(sdt, {
     period: b.period, contractTime: b.contractTime, relaxTime: b.relaxTime,
     lag: WAVE_LAG, thrust: b.thrust * b.size, sink: b.sink,
   }, cone);
@@ -256,19 +266,47 @@ function frame() {
 
   // 触手と口腕（傘の動きから遅れてついてくる）
   bellState.beatT = motion.beat.t;
+
+  // 追加章A：傘のゆがみ（拍動・進む・向きを変える・何もしない）
+  if (sdt > 0) {
+    // 傘の頂点が傾いていく向きと速さ（傘の座標で）
+    const dq = motion.quat.clone().multiply(prevQuat.clone().invert());
+    const ang = 2 * Math.acos(Math.min(1, Math.abs(dq.w)));
+    const axis = new THREE.Vector3(dq.x, dq.y, dq.z);
+    if (axis.lengthSq() > 1e-12) axis.normalize().multiplyScalar((dq.w < 0 ? -ang : ang) / sdt);
+    else axis.set(0, 0, 0);
+    axis.applyQuaternion(motion.quat.clone().invert());
+    turnSmooth.lerp(new THREE.Vector2(-axis.z, axis.x), 1 - Math.exp(-sdt * 6));
+  }
+  const def = deformer.update(sdt, params.deform, {
+    beatStarted: motion.beatStarted,
+    speed: motion.vel / Math.max(0.3, b.size),
+    turnX: turnSmooth.x,
+    turnZ: turnSmooth.y,
+  });
+  bellState.def = def;
+  const bu = bell.uniforms;
+  for (let k = 0; k < 6; k++) bu.uDef.value[k].set(def.modes[k * 4], def.modes[k * 4 + 1], def.modes[k * 4 + 2], def.modes[k * 4 + 3]);
+  bu.uFlat.value = def.flat;
+  bu.uDefHard.value = def.hard;
+  bu.uPK.value.set(...def.pk);
+  bu.uPA.value.set(...def.pa);
+  bu.uPD.value.set(...def.pd);
+  bu.uPP.value.set(...def.pp);
+
   const tp = params.tentacles;
-  tentacles.update(dt, jelly.matrixWorld, jelly.quaternion, bellState, {
+  tentacles.update(sdt, jelly.matrixWorld, jelly.quaternion, bellState, {
     stiffness: THREE.MathUtils.lerp(14, 3, tp.suppleness),
     drag: tp.drag,
     sway: 0.25,
   }, tentacleCount);
   tentacleMesh.sync(tentacleCount);
-  arms.update(dt, jelly.matrixWorld, jelly.quaternion, bellState, {
+  arms.update(sdt, jelly.matrixWorld, jelly.quaternion, bellState, {
     stiffness: THREE.MathUtils.lerp(6, 1, params.arms.lag),
     drag: tp.drag * 1.4,
     sway: 0.15,
   });
-  armMesh.sync(jelly.quaternion, b.size, params.arms.width, params.arms.frill, t);
+  armMesh.sync(jelly.quaternion, b.size, params.arms.width, params.arms.frill, simT);
 
   // カメラはクラゲについていく（周回の中心をクラゲに合わせる）
   prevTarget.copy(controls.target);

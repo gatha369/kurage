@@ -78,6 +78,22 @@ export function createGui(params: Params, status: GuiStatus, onChange: () => voi
   ar.add(params.arms, 'frill', 0, 2, 0.01).name('フリルの強さ');
   ar.add(params.arms, 'lag', 0, 1, 0.01).name('遅れ具合');
 
+  const de = gui.addFolder('傘の歪み（追加章A）');
+  const dp = params.deform;
+  de.add(params.time, 'scale', 0.1, 1, 0.01).name('時間の速さ');
+  de.add(dp, 'strength', 0, 3, 0.01).name('全体のゆがみの強さ');
+  de.add(dp, 'pulse', 0, 3, 0.01).name('①拍動時のばらつき');
+  de.add(dp, 'waves', 1, 6, 1).name('①ゆがみの波の数');
+  de.add(dp, 'variability', 0, 1, 0.01).name('①拍動ごとの変わり方');
+  de.add(dp, 'drag', 0, 3, 0.01).name('②水の抵抗のつぶれ');
+  de.add(dp, 'turn', 0, 3, 0.01).name('③向きを変える時のゆがみ');
+  de.add(dp, 'idle', 0, 3, 0.01).name('④うねりの強さ');
+  de.add(dp, 'idleSpeed', 0.1, 3, 0.01).name('④うねりの速さ');
+  de.add(dp, 'attack', 0.05, 0.4, 0.01).name('ゆがむ速さ（秒）');
+  de.add(dp, 'recover', 0.5, 5, 0.01).name('戻る時間（秒）');
+  de.add(dp, 'overshoot', 0, 1, 0.01).name('揺れ返しの強さ');
+  de.add(dp, 'hardness', 0, 1, 0.01).name('中心の硬さ');
+
   const actions = {
     export: async () => {
       const json = exportParams(params);

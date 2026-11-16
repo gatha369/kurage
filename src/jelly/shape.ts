@@ -1,4 +1,5 @@
 import { contraction } from './pulse';
+import { DEFORM_MODES, type DeformState } from './deform';
 
 // 傘のいびつさ（個体差）を、乱数の種から毎回同じに決める
 
@@ -44,6 +45,7 @@ export interface BellState {
   tr: number;
   lag: number;
   strength: number;
+  def?: DeformState; // 追加章A：ゆがみ（なければゆがみなし）
 }
 
 export const PHI_M = 1.05;
@@ -69,8 +71,21 @@ export function thicknessAt(u: number, s: BellState): number {
 }
 
 /** 傘の上の点（傘自身の座標）。u：中心0〜縁1、side：外側0〜内側1、th：角度 */
+/** ① 拍動の縮み方のばらつき：[縮む強さの倍率の増分, 縮むタイミングの遅れ] */
+export function pulseVariation(th: number, d: DeformState | undefined): [number, number] {
+  if (!d) return [0, 0];
+  let a = 0, dl = 0;
+  for (let j = 0; j < 3; j++) {
+    const w = Math.cos(d.pk[j] * th + d.pp[j]);
+    a += d.pa[j] * w;
+    dl += d.pd[j] * (w * 0.5 + 0.5);
+  }
+  return [Math.max(-0.9, a), dl];
+}
+
 export function bellPos(u: number, side: number, th: number, s: BellState): [number, number, number] {
-  const c = contraction(s.beatT - u * s.lag, s.tc, s.tr) * s.strength;
+  const pv = pulseVariation(th, s.def);
+  const c = contraction(s.beatT - u * s.lag - u * pv[1], s.tc, s.tr) * s.strength * (1 + u * pv[0]);
   const phi = u * PHI_M;
   const sp = Math.sin(phi), cp = Math.cos(phi);
   const sM = Math.sin(PHI_M), cM = Math.cos(PHI_M);
@@ -91,6 +106,23 @@ export function bellPos(u: number, side: number, th: number, s: BellState): [num
   }
   qx *= 1 - 0.3 * c * Math.pow(u, 1.5);
   qy += -c * s.D * 0.65 * u * u + c * s.D * 0.12 * (1 - u);
+  // 追加章A：ゆがみ（縁ほど大きく、中心ほど小さい）
+  const d = s.def;
+  if (d) {
+    const w = Math.pow(u, d.hard);
+    let dr = 0, dy = 0;
+    for (let k = 1; k <= DEFORM_MODES; k++) {
+      const m = (k - 1) * 4;
+      const ck = Math.cos(k * th), sk = Math.sin(k * th);
+      dr += d.modes[m] * ck + d.modes[m + 1] * sk;
+      dy += d.modes[m + 2] * ck + d.modes[m + 3] * sk;
+    }
+    qx += w * dr * s.R;
+    qy += w * dy * s.R;
+    // ② てっぺんが平たくつぶれ、縁は後ろへめくれる
+    qy -= d.flat * s.D * (0.1 * (1 - u * u) + 0.22 * u * u);
+    qx += d.flat * s.R * 0.04 * u * u;
+  }
   qy -= s.D * 0.45;
   return [qx * Math.cos(th), qy, qx * Math.sin(th)];
 }
