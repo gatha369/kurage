@@ -6,7 +6,7 @@ import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
  * 透け感のための描画の順番：
  * 1. クラゲより奥のもの（背景・光の筋・奥の微粒子）を一枚の絵に描く
  * 2. その絵を画面に写し、クラゲはその絵を歪めて透かしながら描く（屈折）
- * 3. クラゲより手前の微粒子を最後に重ねる
+ * 3. クラゲより手前の微粒子と、傘の手前に来た触手・口腕を最後に重ねる
  */
 export class LayeredRenderPass extends Pass {
   bgTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });

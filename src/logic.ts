@@ -57,14 +57,15 @@ export interface QualitySettings {
   particleRatio: number; // 微粒子の数の割合
   postScale: number; // 後処理（ブルーム）の解像度の割合
   maxPixelRatio: number; // 高解像度画面での最大の細かさ
+  tentacleRatio: number; // 触手の本数の割合
 }
 
-// 下げる順番：微粒子 → 後処理の解像度 → （第3章で触手の本数）
+// 下げる順番：微粒子 → 後処理の解像度 → 触手の本数
 // 傘の形・透け感・スポットライトの光には手を付けない
 export const QUALITY_TABLE: Record<QualityLevel, QualitySettings> = {
-  0: { particleRatio: 1, postScale: 1, maxPixelRatio: 2 },
-  1: { particleRatio: 0.55, postScale: 0.7, maxPixelRatio: 2 },
-  2: { particleRatio: 0.3, postScale: 0.5, maxPixelRatio: 1.5 },
+  0: { particleRatio: 1, postScale: 1, maxPixelRatio: 2, tentacleRatio: 1 },
+  1: { particleRatio: 0.55, postScale: 0.7, maxPixelRatio: 2, tentacleRatio: 1 },
+  2: { particleRatio: 0.3, postScale: 0.5, maxPixelRatio: 1.5, tentacleRatio: 0.6 },
 };
 
 /**

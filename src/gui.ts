@@ -1,5 +1,6 @@
 import GUI from 'lil-gui';
 import { exportParams, MAX_PARTICLES, type Params } from './params';
+import { MAX_TENTACLES } from './jelly/chains';
 
 export interface GuiStatus { fps: string; level: string }
 
@@ -62,6 +63,20 @@ export function createGui(params: Params, status: GuiStatus, onChange: () => voi
   be.addColor(params.bell, 'gonadColor').name('四つ葉模様の色');
   be.add(params.bell, 'gonad', 0, 1.5, 0.01).name('四つ葉模様の濃さ');
   be.add(params.bell, 'canal', 0, 2, 0.01).name('放射管の濃さ');
+
+  const te = gui.addFolder('触手');
+  te.add(params.tentacles, 'count', 0, MAX_TENTACLES, 1).name('本数');
+  te.add(params.tentacles, 'length', 0.1, 1.5, 0.01).name('長さ');
+  te.add(params.tentacles, 'thickness', 0.3, 3, 0.01).name('太さ');
+  te.add(params.tentacles, 'variation', 0, 1, 0.01).name('ばらつき');
+  te.add(params.tentacles, 'suppleness', 0, 1, 0.01).name('しなやかさ（遅れ）');
+  te.add(params.tentacles, 'drag', 0, 3, 0.01).name('水の抵抗');
+
+  const ar = gui.addFolder('口腕');
+  ar.add(params.arms, 'length', 0.3, 2.5, 0.01).name('長さ');
+  ar.add(params.arms, 'width', 0.03, 0.35, 0.001).name('幅');
+  ar.add(params.arms, 'frill', 0, 2, 0.01).name('フリルの強さ');
+  ar.add(params.arms, 'lag', 0, 1, 0.01).name('遅れ具合');
 
   const actions = {
     export: async () => {

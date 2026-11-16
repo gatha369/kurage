@@ -40,6 +40,20 @@ export interface Params {
     gonad: number; // 四つ葉模様の濃さ
     canal: number; // 放射管の濃さ
   };
+  tentacles: {
+    count: number; // 本数
+    length: number; // 長さ（傘の半径に対する割合）
+    thickness: number; // 太さ
+    variation: number; // ばらつき
+    suppleness: number; // 遅れ具合（しなやかさ）
+    drag: number; // 水の抵抗の強さ
+  };
+  arms: {
+    length: number; // 長さ（傘の半径に対する割合）
+    width: number; // 幅（傘の半径に対する割合）
+    frill: number; // フリルの強さ
+    lag: number; // 遅れ具合
+  };
   quality: { mode: QualityMode };
 }
 
@@ -73,6 +87,8 @@ export const defaultParams: Params = {
     gonad: 0.8,
     canal: 0.4,
   },
+  tentacles: { count: 240, length: 0.5, thickness: 1, variation: 0.5, suppleness: 0.5, drag: 1 },
+  arms: { length: 1.3, width: 0.13, frill: 0.6, lag: 0.6 },
   quality: { mode: 'auto' },
 };
 

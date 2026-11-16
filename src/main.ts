@@ -9,7 +9,9 @@ import { createPost } from './scene/post';
 import { LayeredRenderPass } from './scene/layered';
 import { createBell } from './jelly/bell';
 import { JellyMotion, type Cone } from './jelly/motion';
-import { JELLY_SEED, shapePhases } from './jelly/shape';
+import { JELLY_SEED, shapePhases, type BellState } from './jelly/shape';
+import { ChainSet, armSpecs, tentacleSpecs } from './jelly/chains';
+import { createArmMesh, createTentacleMesh, setFrontPass } from './jelly/appendages';
 import { createGui } from './gui';
 
 const SPOT_HEIGHT = 12;
@@ -69,9 +71,23 @@ const ph = shapePhases(JELLY_SEED);
 bell.uniforms.uPhase.value.set(ph[0], ph[1], ph[2], ph[3]);
 const motion = new JellyMotion(5);
 
+// 触手と口腕（形は世界の座標で直接計算するので、クラゲのグループには入れない）
+const tentacles = new ChainSet(tentacleSpecs(JELLY_SEED, ph[3]), 10);
+const arms = new ChainSet(armSpecs(ph[3]), 18);
+const tentacleMesh = createTentacleMesh(tentacles);
+const armMesh = createArmMesh(arms);
+scene.add(tentacleMesh.mesh, armMesh.mesh);
+const tentacleRand = tentacles.specs.map((s) => s.rand);
+const bellState: BellState = {
+  R: 1, D: 0.36, thick: 0.2, irr: 0.04, notch: 0.035, phase: ph,
+  beatT: 0, tc: 0.4, tr: 1.2, lag: WAVE_LAG, strength: 1,
+};
+
 // ---- 描画の順番と後処理 ----
 const layered = new LayeredRenderPass(scene, camera, jelly, [beam.mesh], (mode) => {
   particles.uniforms.uSplitMode.value = mode === 'back' ? 1 : 2;
+  setFrontPass(tentacleMesh.mesh.material as THREE.Material, mode === 'front');
+  setFrontPass(armMesh.mesh.material as THREE.Material, mode === 'front');
 });
 bell.uniforms.uBg.value = layered.bgTarget.texture;
 const post = createPost(renderer, layered);
@@ -103,8 +119,11 @@ function resize() {
   post.composer.setPixelRatio(pr);
   post.composer.setSize(w, h);
   bell.uniforms.uResolution.value.set(layered.bgTarget.width, layered.bgTarget.height);
+  const proj = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   particles.uniforms.uPixelRatio.value = pr;
-  particles.uniforms.uProj.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  particles.uniforms.uProj.value = proj;
+  tentacleMesh.uniforms.uPixelRatio.value = pr;
+  tentacleMesh.uniforms.uProj.value = proj;
 }
 window.addEventListener('resize', resize);
 
@@ -116,7 +135,10 @@ function applyQuality() {
   }
   status.level = LEVEL_NAMES[level] + (params.quality.mode === 'auto' ? '（自動）' : '');
   particles.setCount(params.particles.count * QUALITY_TABLE[level].particleRatio);
+  tentacleCount = Math.round(params.tentacles.count * QUALITY_TABLE[level].tentacleRatio);
+  tentacleMesh.setCount(tentacleCount);
 }
+let tentacleCount = 0;
 
 // ---- 調整パネルの値を反映 ----
 const bgColor = new THREE.Color();
@@ -162,6 +184,25 @@ function applyParams() {
   u.uGonad.value = b.gonad;
   u.uCanal.value = b.canal;
   controls.minDistance = 1.9 * b.size + 0.7;
+  Object.assign(bellState, {
+    R: u.uR.value, D: u.uD.value, thick: u.uThick.value, irr: b.irregularity, notch: u.uNotch.value,
+    tc: b.contractTime, tr: b.relaxTime, strength: b.strength,
+  });
+
+  // 触手：長さと太さに個体差
+  const tp = params.tentacles;
+  tentacles.specs.forEach((s, i) => {
+    s.length = tp.length * (1 + tp.variation * (tentacleRand[i] - 0.5) * 1.2);
+  });
+  tentacleMesh.uniforms.uWidth.value = 0.006 * tp.thickness * b.size;
+  tentacleMesh.uniforms.uVariation.value = tp.variation;
+  arms.specs.forEach((s, i) => {
+    s.length = params.arms.length * (1 + 0.12 * Math.sin(i * 2.3));
+  });
+  for (const m of [tentacleMesh, armMesh]) {
+    m.uniforms.uSpotIntensity.value = u.uSpotIntensity.value;
+    m.uniforms.uAmbient.value.copy(u.uAmbient.value);
+  }
 
   particles.uniforms.uSize.value = params.particles.size;
   particles.uniforms.uSink.value = params.particles.sinkSpeed;
@@ -213,6 +254,22 @@ function frame() {
   jelly.updateMatrixWorld();
   bell.uniforms.uBeatT.value = motion.beat.t;
 
+  // 触手と口腕（傘の動きから遅れてついてくる）
+  bellState.beatT = motion.beat.t;
+  const tp = params.tentacles;
+  tentacles.update(dt, jelly.matrixWorld, jelly.quaternion, bellState, {
+    stiffness: THREE.MathUtils.lerp(14, 3, tp.suppleness),
+    drag: tp.drag,
+    sway: 0.25,
+  }, tentacleCount);
+  tentacleMesh.sync(tentacleCount);
+  arms.update(dt, jelly.matrixWorld, jelly.quaternion, bellState, {
+    stiffness: THREE.MathUtils.lerp(6, 1, params.arms.lag),
+    drag: tp.drag * 1.4,
+    sway: 0.15,
+  });
+  armMesh.sync(jelly.quaternion, b.size, params.arms.width, params.arms.frill, t);
+
   // カメラはクラゲについていく（周回の中心をクラゲに合わせる）
   prevTarget.copy(controls.target);
   controls.target.lerp(motion.pos, 1 - Math.exp(-dt * 1.2));
@@ -251,5 +308,5 @@ start();
 
 // 開発中だけ：動作確認用に値へアクセスできるようにする
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality, motion, jelly };
+  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality, motion, jelly, tentacles, arms, tentacleMesh, armMesh, bellState, renderer };
 }

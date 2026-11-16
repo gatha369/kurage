@@ -1,3 +1,5 @@
+import { contraction } from './pulse';
+
 // 傘のいびつさ（個体差）を、乱数の種から毎回同じに決める
 
 export const JELLY_SEED = 20261116;
@@ -26,4 +28,69 @@ export function irregularity(theta: number, amount: number, ph: readonly number[
 /** 8か所の切れ込みの角度 */
 export function notchAngles(ph: readonly number[]): number[] {
   return Array.from({ length: 8 }, (_, k) => ph[3] + (k * Math.PI) / 4);
+}
+
+// ---- 傘の形の計算（画面側の bellShapeGlsl と同じ式）。触手や口腕の付け根を求めるのに使う ----
+
+export interface BellState {
+  R: number; // 半径
+  D: number; // 深さ
+  thick: number; // 中心の厚み
+  irr: number; // いびつさ
+  notch: number; // 切れ込みの深さ
+  phase: readonly number[]; // [位相x3, 切れ込みの向き]
+  beatT: number;
+  tc: number;
+  tr: number;
+  lag: number;
+  strength: number;
+}
+
+export const PHI_M = 1.05;
+
+export function radiusFactor(th: number, u: number, s: BellState): number {
+  const ph = s.phase;
+  const irr = 1 + s.irr * (0.5 * Math.sin(th + ph[0]) + 0.3 * Math.sin(2 * th + ph[1]) + 0.2 * Math.sin(3 * th + ph[2]));
+  const q = Math.PI / 4;
+  let a = (th - ph[3]) % q;
+  if (a < 0) a += q;
+  const d = Math.min(a, q - a);
+  const sm = (e0: number, e1: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const notch = Math.exp(-(d * d) / (0.045 * 0.045)) * sm(0.8, 1, u) * sm(0.8, 1, u);
+  const lobe = 0.008 * sm(0.7, 1, u) * Math.sin((d / (Math.PI / 8)) * Math.PI * 0.5);
+  return irr * (1 - s.notch * notch + lobe);
+}
+
+export function thicknessAt(u: number, s: BellState): number {
+  return s.thick * (0.12 + 0.88 * (1 - Math.pow(u, 1.25)));
+}
+
+/** 傘の上の点（傘自身の座標）。u：中心0〜縁1、side：外側0〜内側1、th：角度 */
+export function bellPos(u: number, side: number, th: number, s: BellState): [number, number, number] {
+  const c = contraction(s.beatT - u * s.lag, s.tc, s.tr) * s.strength;
+  const phi = u * PHI_M;
+  const sp = Math.sin(phi), cp = Math.cos(phi);
+  const sM = Math.sin(PHI_M), cM = Math.cos(PHI_M);
+  const R = s.R * radiusFactor(th, u, s);
+  let ox = (sp / sM) * R;
+  let oy = ((cp - cM) / (1 - cM)) * s.D;
+  let tx = (cp / sM) * R, ty = (-sp / (1 - cM)) * s.D;
+  const tl = Math.hypot(tx, ty);
+  tx /= tl; ty /= tl;
+  const nx = -ty, ny = tx;
+  const t = thicknessAt(u, s);
+  let qx = ox + (ox - nx * t - ox) * side;
+  let qy = oy + (oy - ny * t - oy) * side;
+  if (u >= 0.999) {
+    const b = Math.sin(side * Math.PI) * t * 0.5;
+    qx += tx * b;
+    qy += ty * b;
+  }
+  qx *= 1 - 0.3 * c * Math.pow(u, 1.5);
+  qy += -c * s.D * 0.65 * u * u + c * s.D * 0.12 * (1 - u);
+  qy -= s.D * 0.45;
+  return [qx * Math.cos(th), qy, qx * Math.sin(th)];
 }

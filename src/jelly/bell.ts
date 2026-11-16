@@ -303,6 +303,11 @@ export function createBell() {
       }
     `,
     side: THREE.DoubleSide,
+    // 傘が描かれた所に印を付ける（傘の手前に来た触手・口腕だけを重ね描きするため）
+    stencilWrite: true,
+    stencilRef: 1,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilZPass: THREE.ReplaceStencilOp,
   });
 
   const mesh = new THREE.Mesh(geometry, material);

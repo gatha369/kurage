@@ -51,7 +51,7 @@ const FinishShader = {
 
 export function createPost(renderer: THREE.WebGLRenderer, scenePass: Pass) {
   // 傘の輪郭がギザギザ・ちらつかないよう、なめらかに描く（MSAA）
-  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, stencilBuffer: true });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(scenePass);
   const bloom = new ScaledBloomPass(new THREE.Vector2(256, 256), 0.55, 0.65, 0.55);
