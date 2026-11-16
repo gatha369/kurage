@@ -44,6 +44,25 @@ export function createGui(params: Params, status: GuiStatus, onChange: () => voi
   ca.add(params.autoRotate, 'enabled').name('自動周回');
   ca.add(params.autoRotate, 'speed', 0, 3, 0.01).name('自動周回の速さ');
 
+  const be = gui.addFolder('クラゲの傘');
+  be.add(params.bell, 'size', 0.5, 1.6, 0.01).name('傘の大きさ');
+  be.add(params.bell, 'depth', 0.2, 1.0, 0.01).name('傘の深さ');
+  be.add(params.bell, 'irregularity', 0, 0.15, 0.001).name('いびつさ');
+  be.add(params.bell, 'period', 1.0, 3.5, 0.01).name('拍動の周期（秒）');
+  be.add(params.bell, 'contractTime', 0.15, 1.0, 0.01).name('縮む時間（秒）');
+  be.add(params.bell, 'relaxTime', 0.5, 2.5, 0.01).name('開く時間（秒）');
+  be.add(params.bell, 'strength', 0, 2, 0.01).name('縮む強さ');
+  be.add(params.bell, 'thrust', 0, 1.5, 0.01).name('進む力');
+  be.add(params.bell, 'sink', 0, 0.3, 0.001).name('沈む速さ');
+  be.add(params.bell, 'transparency', 0, 1, 0.01).name('透明度');
+  be.add(params.bell, 'rimWhite', 0, 3, 0.01).name('縁の白さ');
+  be.add(params.bell, 'refraction', 0, 3, 0.01).name('屈折の強さ');
+  be.add(params.bell, 'blue', 0, 1, 0.01).name('青み');
+  be.add(params.bell, 'milk', 0, 1, 0.01).name('乳白感');
+  be.addColor(params.bell, 'gonadColor').name('四つ葉模様の色');
+  be.add(params.bell, 'gonad', 0, 1.5, 0.01).name('四つ葉模様の濃さ');
+  be.add(params.bell, 'canal', 0, 2, 0.01).name('放射管の濃さ');
+
   const actions = {
     export: async () => {
       const json = exportParams(params);

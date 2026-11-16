@@ -5,19 +5,24 @@ import { AdaptiveQuality, IdleWatcher, lightFlicker, spotGeometry, QUALITY_TABLE
 import { spotUniforms } from './scene/shared';
 import { createBeam } from './scene/beam';
 import { createParticles } from './scene/particles';
-import { createPlaceholder } from './scene/placeholder';
 import { createPost } from './scene/post';
+import { LayeredRenderPass } from './scene/layered';
+import { createBell } from './jelly/bell';
+import { JellyMotion, type Cone } from './jelly/motion';
+import { JELLY_SEED, shapePhases } from './jelly/shape';
 import { createGui } from './gui';
 
 const SPOT_HEIGHT = 12;
 const LEVEL_NAMES = ['高', '中', '低'];
+const BASE_SPOT_INTENSITY = defaultParams.spot.intensity;
+const WAVE_LAG = 0.12; // 縮みが中心から縁へ伝わる遅れ（秒）
 
 const params = cloneParams(defaultParams);
 const app = document.getElementById('app')!;
 const loading = document.getElementById('loading')!;
 
 // ---- 描画の準備 ----
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 app.appendChild(renderer.domElement);
@@ -40,9 +45,7 @@ controls.zoomSpeed = 0.7;
 const clockStart = performance.now() / 1000;
 const now = () => performance.now() / 1000 - clockStart;
 const idle = new IdleWatcher(now());
-const markInteraction = () => {
-  idle.interact(now());
-};
+const markInteraction = () => idle.interact(now());
 const el = renderer.domElement;
 let pointerDown = false;
 el.addEventListener('pointerdown', () => { pointerDown = true; markInteraction(); });
@@ -52,22 +55,26 @@ el.addEventListener('pointermove', () => { if (pointerDown) markInteraction(); }
 el.addEventListener('wheel', markInteraction, { passive: true });
 el.addEventListener('touchstart', markInteraction, { passive: true });
 
-// ---- 照明 ----
-const spot = new THREE.SpotLight(0xe6efff, 3, 0, 0.3, 0.7, 0);
-scene.add(spot, spot.target);
-const ambient = new THREE.AmbientLight(0x2a4c80, 0.12);
-scene.add(ambient);
-
 // ---- 物体 ----
 const beam = createBeam();
 scene.add(beam.mesh);
 const particles = createParticles();
 scene.add(particles.points);
-const placeholder = createPlaceholder();
-scene.add(placeholder.mesh);
 
-// ---- 後処理 ----
-const post = createPost(renderer, scene, camera);
+const jelly = new THREE.Group();
+const bell = createBell();
+jelly.add(bell.mesh);
+scene.add(jelly);
+const ph = shapePhases(JELLY_SEED);
+bell.uniforms.uPhase.value.set(ph[0], ph[1], ph[2], ph[3]);
+const motion = new JellyMotion(5);
+
+// ---- 描画の順番と後処理 ----
+const layered = new LayeredRenderPass(scene, camera, jelly, [beam.mesh], (mode) => {
+  particles.uniforms.uSplitMode.value = mode === 'back' ? 1 : 2;
+});
+bell.uniforms.uBg.value = layered.bgTarget.texture;
+const post = createPost(renderer, layered);
 
 // ---- 品質 ----
 const quality = new AdaptiveQuality(now());
@@ -84,8 +91,7 @@ function currentLevel(): QualityLevel {
 }
 
 function resize() {
-  const level = currentLevel();
-  const q = QUALITY_TABLE[level];
+  const q = QUALITY_TABLE[currentLevel()];
   const pr = Math.min(window.devicePixelRatio || 1, q.maxPixelRatio);
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -96,6 +102,7 @@ function resize() {
   post.bloom.scale = q.postScale;
   post.composer.setPixelRatio(pr);
   post.composer.setSize(w, h);
+  bell.uniforms.uResolution.value.set(layered.bgTarget.width, layered.bgTarget.height);
   particles.uniforms.uPixelRatio.value = pr;
   particles.uniforms.uProj.value = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
 }
@@ -113,13 +120,13 @@ function applyQuality() {
 
 // ---- 調整パネルの値を反映 ----
 const bgColor = new THREE.Color();
+const ambientColor = new THREE.Color(0x2a4c80);
+const cone: Cone = { apex: new THREE.Vector3(), axis: new THREE.Vector3(), tan: 0 };
+
 function applyParams() {
   bgColor.set(params.background.color).multiplyScalar(params.background.brightness);
   scene.background = bgColor;
   spotUniforms.uFogDensity.value = params.fog.density;
-  if (!scene.fog) scene.fog = new THREE.FogExp2(bgColor, params.fog.density);
-  (scene.fog as THREE.FogExp2).color.copy(bgColor);
-  (scene.fog as THREE.FogExp2).density = params.fog.density;
 
   const { apex, axis } = spotGeometry(params.spot.tiltX, params.spot.tiltZ, SPOT_HEIGHT);
   const ang = THREE.MathUtils.degToRad(params.spot.angle);
@@ -127,15 +134,34 @@ function applyParams() {
   spotUniforms.uAxis.value.set(axis.x, axis.y, axis.z);
   spotUniforms.uTanAngle.value = Math.tan(ang);
   spotUniforms.uCosAngle.value = Math.cos(ang);
-  spot.position.set(apex.x, apex.y, apex.z);
-  spot.target.position.set(apex.x + axis.x * 20, apex.y + axis.y * 20, apex.z + axis.z * 20);
-  spot.angle = Math.min(ang * 1.15, Math.PI / 2 - 0.01);
-  spot.penumbra = 0.75;
+  cone.apex.copy(spotUniforms.uApex.value);
+  cone.axis.copy(spotUniforms.uAxis.value);
+  cone.tan = Math.tan(ang);
   beam.uniforms.uStrength.value = params.spot.beam;
   beam.sync();
 
-  ambient.intensity = params.ambient.intensity;
-  placeholder.uniforms.uCaustics.value = params.caustics.strength;
+  const b = params.bell;
+  const u = bell.uniforms;
+  u.uSpotIntensity.value = params.spot.intensity / BASE_SPOT_INTENSITY;
+  u.uAmbient.value.copy(ambientColor).multiplyScalar(params.ambient.intensity);
+  u.uCaustics.value = params.caustics.strength;
+  u.uR.value = b.size;
+  u.uD.value = b.depth * b.size;
+  u.uThick.value = 0.2 * b.size;
+  u.uIrr.value = b.irregularity;
+  u.uTc.value = b.contractTime;
+  u.uTr.value = b.relaxTime;
+  u.uLag.value = WAVE_LAG;
+  u.uStrength.value = b.strength;
+  u.uTransparency.value = b.transparency;
+  u.uRimWhite.value = b.rimWhite;
+  u.uRefract.value = b.refraction;
+  u.uBlue.value = b.blue;
+  u.uMilk.value = b.milk;
+  u.uGonadColor.value.set(b.gonadColor);
+  u.uGonad.value = b.gonad;
+  u.uCanal.value = b.canal;
+  controls.minDistance = 1.9 * b.size + 0.7;
 
   particles.uniforms.uSize.value = params.particles.size;
   particles.uniforms.uSink.value = params.particles.sinkSpeed;
@@ -154,10 +180,11 @@ resize();
 let last = now();
 let fpsAcc = 0;
 let fpsFrames = 0;
+const prevTarget = new THREE.Vector3();
 
 function frame() {
   const t = now();
-  const dt = t - last;
+  const dt = Math.min(t - last, 0.1);
   last = t;
 
   // fps表示（0.5秒ごとに更新）
@@ -171,11 +198,25 @@ function frame() {
   if (params.quality.mode === 'auto' && quality.update(t, dt)) applyQuality();
 
   // 光のゆらぎ
-  const flick = lightFlicker(t, params.spot.flicker);
-  spotUniforms.uLight.value = flick;
+  spotUniforms.uLight.value = lightFlicker(t, params.spot.flicker);
   spotUniforms.uTime.value = t;
-  spot.intensity = params.spot.intensity * flick;
   post.finish.uniforms.uTime.value = t;
+
+  // クラゲの拍動と泳ぎ
+  const b = params.bell;
+  motion.update(dt, {
+    period: b.period, contractTime: b.contractTime, relaxTime: b.relaxTime,
+    lag: WAVE_LAG, thrust: b.thrust * b.size, sink: b.sink,
+  }, cone);
+  jelly.position.copy(motion.pos);
+  jelly.quaternion.copy(motion.quat);
+  jelly.updateMatrixWorld();
+  bell.uniforms.uBeatT.value = motion.beat.t;
+
+  // カメラはクラゲについていく（周回の中心をクラゲに合わせる）
+  prevTarget.copy(controls.target);
+  controls.target.lerp(motion.pos, 1 - Math.exp(-dt * 1.2));
+  camera.position.add(controls.target.clone().sub(prevTarget));
 
   // 放置10秒で自動周回（操作するとすぐ止まる）
   const f = params.autoRotate.enabled ? idle.factor(t) : 0;
@@ -183,8 +224,11 @@ function frame() {
   controls.autoRotateSpeed = params.autoRotate.speed * f;
   controls.update(dt);
 
-  // ピントはクラゲ（中心）に合わせる
-  particles.uniforms.uFocusDist.value = camera.position.distanceTo(controls.target);
+  // ピントはクラゲに合わせる。クラゲより手前の微粒子は最後に重ねる
+  const dist = camera.position.distanceTo(motion.pos);
+  particles.uniforms.uFocusDist.value = dist;
+  particles.uniforms.uSplit.value = dist - b.size * 1.1;
+  bell.uniforms.uCamLocal.value.copy(jelly.worldToLocal(camera.position.clone()));
 
   post.composer.render(dt);
 }
@@ -207,5 +251,5 @@ start();
 
 // 開発中だけ：動作確認用に値へアクセスできるようにする
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality };
+  (window as unknown as Record<string, unknown>).__kurage = { params, applyParams, camera, controls, quality, motion, jelly };
 }

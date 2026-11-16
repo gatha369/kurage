@@ -21,13 +21,32 @@ export interface Params {
   dof: { strength: number };
   grain: { strength: number };
   autoRotate: { enabled: boolean; speed: number };
+  bell: {
+    size: number; // 傘の大きさ（半径）
+    depth: number; // 傘の深さ
+    irregularity: number; // いびつさの強さ
+    period: number; // 拍動の周期（秒）
+    contractTime: number; // 縮む時間（秒）＝縮む速さ
+    relaxTime: number; // 開く時間（秒）＝開く速さ
+    strength: number; // 縮む強さ
+    thrust: number; // 進む力
+    sink: number; // 沈む速さ
+    transparency: number; // 透明度
+    rimWhite: number; // 縁の白さ
+    refraction: number; // 屈折の強さ
+    blue: number; // 青み
+    milk: number; // 乳白感
+    gonadColor: string; // 四つ葉模様の色
+    gonad: number; // 四つ葉模様の濃さ
+    canal: number; // 放射管の濃さ
+  };
   quality: { mode: QualityMode };
 }
 
 export const defaultParams: Params = {
   background: { color: '#03101f', brightness: 0.55 },
   fog: { density: 0.07 },
-  spot: { intensity: 3.2, angle: 9, tiltX: 4, tiltZ: -3, beam: 0.04, flicker: 0.12 },
+  spot: { intensity: 3.2, angle: 11, tiltX: 4, tiltZ: -3, beam: 0.04, flicker: 0.12 },
   ambient: { intensity: 0.12 },
   particles: { count: 4000, size: 1, sinkSpeed: 0.04 },
   caustics: { strength: 0.35 },
@@ -35,6 +54,25 @@ export const defaultParams: Params = {
   dof: { strength: 1 },
   grain: { strength: 0.045 },
   autoRotate: { enabled: true, speed: 0.35 },
+  bell: {
+    size: 1,
+    depth: 0.36,
+    irregularity: 0.04,
+    period: 1.8,
+    contractTime: 0.4,
+    relaxTime: 1.2,
+    strength: 1,
+    thrust: 0.45,
+    sink: 0.06,
+    transparency: 0.82,
+    rimWhite: 1,
+    refraction: 1,
+    blue: 0.4,
+    milk: 0.35,
+    gonadColor: '#f2b6c8',
+    gonad: 0.8,
+    canal: 0.4,
+  },
   quality: { mode: 'auto' },
 };
 

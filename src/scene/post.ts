@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -49,10 +49,11 @@ const FinishShader = {
   `,
 };
 
-export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
-  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+export function createPost(renderer: THREE.WebGLRenderer, scenePass: Pass) {
+  // 傘の輪郭がギザギザ・ちらつかないよう、なめらかに描く（MSAA）
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   const composer = new EffectComposer(renderer, target);
-  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(scenePass);
   const bloom = new ScaledBloomPass(new THREE.Vector2(256, 256), 0.55, 0.65, 0.55);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());

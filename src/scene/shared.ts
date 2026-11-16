@@ -36,3 +36,33 @@ float hash12(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 `;
+
+/** コースティクス（光の網目模様）。ゆっくりうごめく（GLSL） */
+export const causticsGlsl = /* glsl */ `
+vec2 cHash(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return fract(sin(p) * 43758.5453);
+}
+// セル模様の「境目」ほど明るくなる
+float cVoronoiEdge(vec2 x, float t) {
+  vec2 n = floor(x);
+  vec2 f = fract(x);
+  float f1 = 8.0, f2 = 8.0;
+  for (int j = -1; j <= 1; j++)
+  for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j));
+    vec2 o = cHash(n + g);
+    o = 0.5 + 0.45 * sin(t + 6.2831 * o);
+    float d = length(g + o - f);
+    if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
+  }
+  return f2 - f1;
+}
+float caustics(vec2 uv, float t) {
+  float a = cVoronoiEdge(uv, t * 0.55);
+  float b = cVoronoiEdge(uv * 1.7 + 3.1, -t * 0.4);
+  float ca = 1.0 - smoothstep(0.0, 0.16, a);
+  float cb = 1.0 - smoothstep(0.0, 0.2, b);
+  return ca * 0.7 + ca * cb * 0.8 + cb * 0.15;
+}
+`;

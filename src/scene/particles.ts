@@ -34,6 +34,8 @@ export function createParticles(seed = 7) {
     uFocusDist: { value: 6 },
     uDof: { value: 1 },
     uAmbient: { value: 0.015 },
+    uSplit: { value: 0 }, // この距離より手前／奥だけを描く
+    uSplitMode: { value: 0 }, // 0=すべて, 1=奥だけ, 2=手前だけ
   };
 
   const material = new THREE.ShaderMaterial({
@@ -50,6 +52,8 @@ export function createParticles(seed = 7) {
       uniform float uFocusDist;
       uniform float uDof;
       uniform float uAmbient;
+      uniform float uSplit;
+      uniform float uSplitMode;
       varying float vAlpha;
       varying float vBlur;
 
@@ -84,7 +88,8 @@ export function createParticles(seed = 7) {
         float energy = pow(px / size, 1.6);
         vAlpha = (light * 1.6 * twinkle + uAmbient) * fog * energy;
         gl_Position = projectionMatrix * mv;
-        if (vAlpha < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // 見えない粒は描かない
+        bool skip = (uSplitMode > 0.5 && uSplitMode < 1.5 && dist < uSplit) || (uSplitMode > 1.5 && dist >= uSplit);
+        if (vAlpha < 0.002 || skip) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // 見えない粒は描かない
       }
     `,
     fragmentShader: /* glsl */ `
